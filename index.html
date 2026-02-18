@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Reef Runner - Mutton Snapper</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #0a1628;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      border: 3px solid #1a6e8a;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="400" height="600"></canvas>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game state
+    let fish, corals, score, bestScore, gameState, frame;
+    let bubbles = [];
+    let seaweedOffset = 0;
+
+    const GRAVITY = 0.3;
+    const SWIM = -6.5;
+    const CORAL_SPEED = 2.5;
+    const CORAL_GAP = 155;
+    const CORAL_WIDTH = 65;
+    const CORAL_SPAWN = 105;
+    const FISH_SIZE = 22;
+
+    function reset() {
+      fish = { x: 80, y: 300, vel: 0, rotation: 0 };
+      corals = [];
+      bubbles = [];
+      score = 0;
+      frame = 0;
+      gameState = 'ready';
+    }
+
+    bestScore = 0;
+    reset();
+
+    function drawBackground() {
+      // Ocean gradient - deep blue
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, '#0a4a7a');
+      grad.addColorStop(0.3, '#0c3d6b');
+      grad.addColorStop(0.7, '#0a2d52');
+      grad.addColorStop(1, '#061a33');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Light rays from surface
+      ctx.save();
+      for (let i = 0; i < 5; i++) {
+        const x = 60 + i * 85;
+        const sway = Math.sin(frame * 0.01 + i) * 10;
+        ctx.fillStyle = 'rgba(100, 200, 255, 0.03)';
+        ctx.beginPath();
+        ctx.moveTo(x + sway - 15, 0);
+        ctx.lineTo(x + sway + 15, 0);
+        ctx.lineTo(x + sway + 60, canvas.height);
+        ctx.lineTo(x + sway - 60, canvas.height);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Floating particles
+      ctx.fillStyle = 'rgba(150, 220, 255, 0.15)';
+      for (let i = 0; i < 20; i++) {
+        const px = (i * 97 + frame * 0.3) % canvas.width;
+        const py = (i * 73 + Math.sin(frame * 0.02 + i) * 20) % canvas.height;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Sandy ocean floor
+      const sandGrad = ctx.createLinearGradient(0, canvas.height - 55, 0, canvas.height);
+      sandGrad.addColorStop(0, '#c2a360');
+      sandGrad.addColorStop(0.3, '#b8944d');
+      sandGrad.addColorStop(1, '#a07830');
+      ctx.fillStyle = sandGrad;
+      ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+
+      // Sand ripples
+      ctx.strokeStyle = 'rgba(160, 130, 70, 0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < canvas.width; i += 25) {
+        const offset = Math.sin(frame * 0.015 + i * 0.1) * 3;
+        ctx.beginPath();
+        ctx.moveTo(i, canvas.height - 40 + offset);
+        ctx.quadraticCurveTo(i + 12, canvas.height - 43 + offset, i + 25, canvas.height - 40 + offset);
+        ctx.stroke();
+      }
+
+      // Small rocks on floor
+      ctx.fillStyle = '#8a7040';
+      drawRock(30, canvas.height - 52, 8);
+      drawRock(120, canvas.height - 51, 6);
+      drawRock(250, canvas.height - 53, 10);
+      drawRock(350, canvas.height - 51, 7);
+
+      // Background seaweed
+      drawSeaweed(20, canvas.height - 50, 45, '#1a6b3a');
+      drawSeaweed(100, canvas.height - 50, 35, '#1d7a40');
+      drawSeaweed(180, canvas.height - 50, 50, '#155e30');
+      drawSeaweed(280, canvas.height - 50, 40, '#1a6b3a');
+      drawSeaweed(360, canvas.height - 50, 38, '#1d7a40');
+    }
+
+    function drawRock(x, y, size) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, size, size * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawSeaweed(x, baseY, height, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      const sway = Math.sin(frame * 0.02 + x * 0.1) * 8;
+      ctx.beginPath();
+      ctx.moveTo(x, baseY);
+      ctx.quadraticCurveTo(x + sway, baseY - height * 0.5, x + sway * 1.2, baseY - height);
+      ctx.stroke();
+
+      // Leaves
+      ctx.fillStyle = color;
+      for (let i = 1; i <= 3; i++) {
+        const ly = baseY - (height * i * 0.25);
+        const lx = x + sway * (i * 0.3);
+        const side = i % 2 === 0 ? 1 : -1;
+        ctx.beginPath();
+        ctx.ellipse(lx + side * 6, ly, 8, 3, side * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Bubble system
+    function spawnBubble(x, y) {
+      for (let i = 0; i < 3; i++) {
+        bubbles.push({
+          x: x + Math.random() * 10 - 5,
+          y: y,
+          size: Math.random() * 3 + 1,
+          speed: Math.random() * 1 + 0.5,
+          wobble: Math.random() * Math.PI * 2,
+          life: 60
+        });
+      }
+    }
+
+    function updateBubbles() {
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        bubbles[i].y -= bubbles[i].speed;
+        bubbles[i].x += Math.sin(bubbles[i].wobble + frame * 0.1) * 0.3;
+        bubbles[i].life--;
+        if (bubbles[i].life <= 0) bubbles.splice(i, 1);
+      }
+    }
+
+    function drawBubbles() {
+      for (const b of bubbles) {
+        const alpha = b.life / 60;
+        ctx.strokeStyle = `rgba(180, 230, 255, ${alpha * 0.6})`;
+        ctx.fillStyle = `rgba(200, 240, 255, ${alpha * 0.15})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    function drawFish() {
+      ctx.save();
+      ctx.translate(fish.x, fish.y);
+
+      // Rotation based on velocity
+      fish.rotation = Math.min(fish.vel * 2.5, 50);
+      ctx.rotate(fish.rotation * Math.PI / 180);
+
+      const tailWag = Math.sin(frame * 0.25) * 8;
+
+      // Tail fin
+      ctx.fillStyle = '#c93545';
+      ctx.beginPath();
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(-32, -10 + tailWag);
+      ctx.lineTo(-28, 0);
+      ctx.lineTo(-32, 10 + tailWag);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#a82a38';
+      ctx.beginPath();
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(-30, tailWag);
+      ctx.lineTo(-32, 10 + tailWag);
+      ctx.closePath();
+      ctx.fill();
+
+      // Main body - mutton snapper shape (pinkish-red with lighter belly)
+      // Body
+      ctx.fillStyle = '#d45a6a';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, FISH_SIZE, FISH_SIZE * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Belly (lighter underside)
+      ctx.fillStyle = '#e8a0a8';
+      ctx.beginPath();
+      ctx.ellipse(0, 4, FISH_SIZE * 0.85, FISH_SIZE * 0.3, 0, 0, Math.PI);
+      ctx.fill();
+
+      // Dark spot on side (characteristic of mutton snapper)
+      ctx.fillStyle = 'rgba(80, 20, 30, 0.5)';
+      ctx.beginPath();
+      ctx.arc(2, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Stripe pattern
+      ctx.strokeStyle = 'rgba(180, 60, 70, 0.3)';
+      ctx.lineWidth = 1;
+      for (let i = -12; i < 15; i += 5) {
+        ctx.beginPath();
+        ctx.moveTo(i, -FISH_SIZE * 0.5);
+        ctx.lineTo(i + 3, FISH_SIZE * 0.5);
+        ctx.stroke();
+      }
+
+      // Dorsal fin (top)
+      ctx.fillStyle = '#c93545';
+      ctx.beginPath();
+      ctx.moveTo(-10, -FISH_SIZE * 0.55);
+      ctx.quadraticCurveTo(0, -FISH_SIZE * 1.1, 10, -FISH_SIZE * 0.55);
+      ctx.closePath();
+      ctx.fill();
+
+      // Dorsal fin spines
+      ctx.strokeStyle = '#a82a38';
+      ctx.lineWidth = 1;
+      for (let i = -7; i <= 7; i += 3.5) {
+        ctx.beginPath();
+        ctx.moveTo(i, -FISH_SIZE * 0.55);
+        ctx.lineTo(i, -FISH_SIZE * 0.9);
+        ctx.stroke();
+      }
+
+      // Bottom fin
+      ctx.fillStyle = '#d4707c';
+      ctx.beginPath();
+      ctx.moveTo(-2, FISH_SIZE * 0.5);
+      ctx.quadraticCurveTo(3, FISH_SIZE * 0.85, 8, FISH_SIZE * 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Pectoral fin
+      const finWave = Math.sin(frame * 0.2) * 5;
+      ctx.fillStyle = '#d4707c';
+      ctx.beginPath();
+      ctx.moveTo(5, 3);
+      ctx.quadraticCurveTo(2, 12 + finWave, -5, 10 + finWave);
+      ctx.quadraticCurveTo(0, 5, 5, 3);
+      ctx.fill();
+
+      // Eye
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(12, -4, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath();
+      ctx.arc(13, -4, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      // Eye shine
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(14, -5.5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Mouth
+      ctx.strokeStyle = '#a82a38';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(FISH_SIZE - 2, 1);
+      ctx.quadraticCurveTo(FISH_SIZE + 2, 3, FISH_SIZE - 1, 5);
+      ctx.stroke();
+
+      // Scales shimmer
+      ctx.fillStyle = 'rgba(255, 200, 210, 0.15)';
+      for (let sx = -12; sx < 12; sx += 6) {
+        for (let sy = -6; sy < 6; sy += 5) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawCoral(coral) {
+      // Top coral (hanging from above)
+      drawCoralFormation(coral.x, 0, coral.top, true, coral.colorSeed);
+
+      // Bottom coral (growing from below)
+      drawCoralFormation(coral.x, coral.top + CORAL_GAP, canvas.height - 50 - (coral.top + CORAL_GAP), false, coral.colorSeed + 3);
+    }
+
+    function drawCoralFormation(x, y, height, hanging, seed) {
+      if (height <= 0) return;
+
+      ctx.save();
+
+      // Main coral body
+      const baseColor = seed % 3;
+      let color1, color2, color3;
+      if (baseColor === 0) {
+        color1 = '#e05070'; color2 = '#c93858'; color3 = '#ff7090';
+      } else if (baseColor === 1) {
+        color1 = '#e08030'; color2 = '#c06820'; color3 = '#ffa050';
+      } else {
+        color1 = '#9040c0'; color2 = '#7030a0'; color3 = '#b060e0';
+      }
+
+      if (hanging) {
+        // Coral growing down from top
+        // Main trunk
+        ctx.fillStyle = color1;
+        ctx.fillRect(x + 8, y, CORAL_WIDTH - 16, height);
+
+        // Bumpy edges
+        for (let i = y; i < y + height; i += 12) {
+          const bumpL = Math.sin(i * 0.3 + seed) * 8;
+          const bumpR = Math.sin(i * 0.3 + seed + 2) * 8;
+
+          ctx.fillStyle = color1;
+          ctx.beginPath();
+          ctx.arc(x + 8 + bumpL, i, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x + CORAL_WIDTH - 8 + bumpR, i, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Coral tip (bottom)
+        ctx.fillStyle = color3;
+        for (let i = 0; i < 4; i++) {
+          const tx = x + 10 + i * 13;
+          const sway = Math.sin(frame * 0.03 + i + seed) * 2;
+          ctx.beginPath();
+          ctx.moveTo(tx - 6, y + height);
+          ctx.quadraticCurveTo(tx + sway, y + height + 15, tx + 6, y + height);
+          ctx.fill();
+        }
+
+        // Texture dots
+        ctx.fillStyle = color3;
+        for (let i = y + 10; i < y + height - 5; i += 15) {
+          for (let j = x + 12; j < x + CORAL_WIDTH - 8; j += 10) {
+            ctx.beginPath();
+            ctx.arc(j, i, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      } else {
+        // Coral growing up from bottom
+        const baseY = y + height;
+
+        ctx.fillStyle = color1;
+        ctx.fillRect(x + 8, y, CORAL_WIDTH - 16, height);
+
+        for (let i = y; i < baseY; i += 12) {
+          const bumpL = Math.sin(i * 0.3 + seed) * 8;
+          const bumpR = Math.sin(i * 0.3 + seed + 2) * 8;
+
+          ctx.fillStyle = color1;
+          ctx.beginPath();
+          ctx.arc(x + 8 + bumpL, i, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x + CORAL_WIDTH - 8 + bumpR, i, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Coral tip (top)
+        ctx.fillStyle = color3;
+        for (let i = 0; i < 4; i++) {
+          const tx = x + 10 + i * 13;
+          const sway = Math.sin(frame * 0.03 + i + seed) * 2;
+          ctx.beginPath();
+          ctx.moveTo(tx - 6, y);
+          ctx.quadraticCurveTo(tx + sway, y - 15, tx + 6, y);
+          ctx.fill();
+        }
+
+        // Texture dots
+        ctx.fillStyle = color3;
+        for (let i = y + 10; i < baseY - 5; i += 15) {
+          for (let j = x + 12; j < x + CORAL_WIDTH - 8; j += 10) {
+            ctx.beginPath();
+            ctx.arc(j, i, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawScore() {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.font = 'bold 48px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(score, canvas.width / 2 + 2, 62);
+
+      ctx.fillStyle = '#7df3ff';
+      ctx.strokeStyle = '#0a4a7a';
+      ctx.lineWidth = 3;
+      ctx.strokeText(score, canvas.width / 2, 60);
+      ctx.fillText(score, canvas.width / 2, 60);
+    }
+
+    function drawStartScreen() {
+      ctx.fillStyle = 'rgba(0,20,40,0.5)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#7df3ff';
+      ctx.font = 'bold 38px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Reef Runner', canvas.width / 2, 180);
+
+      ctx.fillStyle = '#e08888';
+      ctx.font = '20px Arial';
+      ctx.fillText('Mutton Snapper Edition', canvas.width / 2, 215);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '22px Arial';
+      ctx.fillText('Click or press Space to swim', canvas.width / 2, 350);
+
+      if (bestScore > 0) {
+        ctx.font = '20px Arial';
+        ctx.fillStyle = '#7df3ff';
+        ctx.fillText('Best: ' + bestScore, canvas.width / 2, 400);
+      }
+    }
+
+    function drawGameOver() {
+      ctx.fillStyle = 'rgba(0,10,20,0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#e05070';
+      ctx.font = 'bold 44px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Game Over', canvas.width / 2, 200);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '28px Arial';
+      ctx.fillText('Score: ' + score, canvas.width / 2, 270);
+
+      ctx.fillStyle = '#7df3ff';
+      ctx.font = '22px Arial';
+      ctx.fillText('Best: ' + bestScore, canvas.width / 2, 310);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '20px Arial';
+      ctx.fillText('Click or Space to swim again', canvas.width / 2, 400);
+    }
+
+    function checkCollision() {
+      // Ocean floor and surface
+      if (fish.y + FISH_SIZE > canvas.height - 50 || fish.y - FISH_SIZE < 0) {
+        return true;
+      }
+
+      // Corals
+      for (const coral of corals) {
+        if (fish.x + FISH_SIZE > coral.x &&
+            fish.x - FISH_SIZE < coral.x + CORAL_WIDTH) {
+          if (fish.y - FISH_SIZE * 0.55 < coral.top ||
+              fish.y + FISH_SIZE * 0.55 > coral.top + CORAL_GAP) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function update() {
+      if (gameState !== 'playing') {
+        frame++;
+        return;
+      }
+
+      frame++;
+
+      // Fish physics (slightly floatier than air - it's water!)
+      fish.vel += GRAVITY;
+      fish.y += fish.vel;
+
+      // Spawn corals
+      if (frame % CORAL_SPAWN === 0) {
+        const minTop = 80;
+        const maxTop = canvas.height - CORAL_GAP - 130;
+        const top = Math.random() * (maxTop - minTop) + minTop;
+        corals.push({
+          x: canvas.width,
+          top: top,
+          scored: false,
+          colorSeed: Math.floor(Math.random() * 10)
+        });
+      }
+
+      // Move corals
+      for (let i = corals.length - 1; i >= 0; i--) {
+        corals[i].x -= CORAL_SPEED;
+
+        if (!corals[i].scored && corals[i].x + CORAL_WIDTH < fish.x) {
+          corals[i].scored = true;
+          score++;
+        }
+
+        if (corals[i].x + CORAL_WIDTH < 0) {
+          corals.splice(i, 1);
+        }
+      }
+
+      // Ambient bubbles from fish
+      if (frame % 20 === 0) {
+        spawnBubble(fish.x - 10, fish.y);
+      }
+
+      updateBubbles();
+
+      // Collision
+      if (checkCollision()) {
+        gameState = 'dead';
+        if (score > bestScore) bestScore = score;
+      }
+    }
+
+    function draw() {
+      drawBackground();
+
+      for (const coral of corals) {
+        drawCoral(coral);
+      }
+
+      drawBubbles();
+      drawFish();
+      drawScore();
+
+      if (gameState === 'ready') drawStartScreen();
+      if (gameState === 'dead') drawGameOver();
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function swim() {
+      if (gameState === 'ready') {
+        gameState = 'playing';
+        fish.vel = SWIM;
+        spawnBubble(fish.x, fish.y + 5);
+      } else if (gameState === 'playing') {
+        fish.vel = SWIM;
+        spawnBubble(fish.x, fish.y + 5);
+      } else if (gameState === 'dead') {
+        reset();
+      }
+    }
+
+    // Controls
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        swim();
+      }
+    });
+    canvas.addEventListener('click', swim);
+
+    // Start
+    gameLoop();
+  </script>
+</body>
+</html>
