@@ -33,13 +33,25 @@
     let accumulator = 0;
     const FIXED_DT = 1000 / 60; // simulate at 60fps always
 
-    const GRAVITY = 0.6;
-    const SWIM = -9;
-    const CORAL_SPEED = 7;
-    const CORAL_GAP = 140;
+    const BASE_GRAVITY = 0.4;
+    const BASE_SWIM = -7.5;
+    const BASE_CORAL_SPEED = 4;
+    const BASE_CORAL_GAP = 160;
     const CORAL_WIDTH = 65;
-    const CORAL_SPAWN = 45;
+    const BASE_CORAL_SPAWN = 80;
     const FISH_SIZE = 22;
+
+    // Difficulty ramps up with score
+    function getDifficulty() {
+      const d = Math.min(score / 30, 1); // maxes out around score 30
+      return {
+        gravity: BASE_GRAVITY + d * 0.3,
+        swim: BASE_SWIM - d * 2.5,
+        coralSpeed: BASE_CORAL_SPEED + d * 5,
+        coralGap: BASE_CORAL_GAP - d * 30,
+        coralSpawn: Math.max(BASE_CORAL_SPAWN - d * 40, 35),
+      };
+    }
 
     function reset() {
       fish = { x: 80, y: 300, vel: 0, rotation: 0 };
@@ -316,11 +328,12 @@
     }
 
     function drawCoral(coral) {
+      const gap = coral.gap || BASE_CORAL_GAP;
       // Top coral (hanging from above)
       drawCoralFormation(coral.x, 0, coral.top, true, coral.colorSeed);
 
       // Bottom coral (growing from below)
-      drawCoralFormation(coral.x, coral.top + CORAL_GAP, canvas.height - 50 - (coral.top + CORAL_GAP), false, coral.colorSeed + 3);
+      drawCoralFormation(coral.x, coral.top + gap, canvas.height - 50 - (coral.top + gap), false, coral.colorSeed + 3);
     }
 
     function drawCoralFormation(x, y, height, hanging, seed) {
@@ -493,8 +506,9 @@
       for (const coral of corals) {
         if (fish.x + FISH_SIZE > coral.x &&
             fish.x - FISH_SIZE < coral.x + CORAL_WIDTH) {
+          const gap = coral.gap || BASE_CORAL_GAP;
           if (fish.y - FISH_SIZE * 0.55 < coral.top ||
-              fish.y + FISH_SIZE * 0.55 > coral.top + CORAL_GAP) {
+              fish.y + FISH_SIZE * 0.55 > coral.top + gap) {
             return true;
           }
         }
@@ -509,19 +523,22 @@
       }
 
       frame++;
+      const diff = getDifficulty();
 
       // Fish physics (slightly floatier than air - it's water!)
-      fish.vel += GRAVITY;
+      fish.vel += diff.gravity;
       fish.y += fish.vel;
 
       // Spawn corals
-      if (frame % CORAL_SPAWN === 0) {
+      const spawnRate = Math.round(diff.coralSpawn);
+      if (frame % spawnRate === 0) {
         const minTop = 80;
-        const maxTop = canvas.height - CORAL_GAP - 130;
+        const maxTop = canvas.height - diff.coralGap - 130;
         const top = Math.random() * (maxTop - minTop) + minTop;
         corals.push({
           x: canvas.width,
           top: top,
+          gap: diff.coralGap,
           scored: false,
           colorSeed: Math.floor(Math.random() * 10)
         });
@@ -529,7 +546,7 @@
 
       // Move corals
       for (let i = corals.length - 1; i >= 0; i--) {
-        corals[i].x -= CORAL_SPEED;
+        corals[i].x -= diff.coralSpeed;
 
         if (!corals[i].scored && corals[i].x + CORAL_WIDTH < fish.x) {
           corals[i].scored = true;
@@ -588,10 +605,10 @@
     function swim() {
       if (gameState === 'ready') {
         gameState = 'playing';
-        fish.vel = SWIM;
+        fish.vel = getDifficulty().swim;
         spawnBubble(fish.x, fish.y + 5);
       } else if (gameState === 'playing') {
-        fish.vel = SWIM;
+        fish.vel = getDifficulty().swim;
         spawnBubble(fish.x, fish.y + 5);
       } else if (gameState === 'dead') {
         reset();
