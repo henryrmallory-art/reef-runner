@@ -25,20 +25,27 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
 
-    // Fart sound using Web Audio API
+    // Moan sound using Web Audio API
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playFart() {
+    function playMoan() {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(80, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+      osc.type = 'sine';
+      const t = audioCtx.currentTime;
+      osc.frequency.setValueAtTime(250, t);
+      osc.frequency.linearRampToValueAtTime(400, t + 0.15);
+      osc.frequency.linearRampToValueAtTime(300, t + 0.3);
+      osc.frequency.linearRampToValueAtTime(350, t + 0.4);
+      osc.frequency.linearRampToValueAtTime(200, t + 0.5);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.25, t + 0.05);
+      gain.gain.linearRampToValueAtTime(0.3, t + 0.2);
+      gain.gain.linearRampToValueAtTime(0.15, t + 0.35);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.2);
+      osc.start(t);
+      osc.stop(t + 0.5);
     }
 
     // Floating text system
@@ -650,12 +657,12 @@
         gameState = 'playing';
         fish.vel = getDifficulty().swim;
         spawnBubble(fish.x, fish.y + 5);
-        playFart();
+        playMoan();
         spawnFloatingText(fish.x, fish.y - 20);
       } else if (gameState === 'playing') {
         fish.vel = getDifficulty().swim;
         spawnBubble(fish.x, fish.y + 5);
-        playFart();
+        playMoan();
         spawnFloatingText(fish.x, fish.y - 20);
       } else if (gameState === 'dead') {
         reset();
