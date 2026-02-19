@@ -33,12 +33,12 @@
     let accumulator = 0;
     const FIXED_DT = 1000 / 60; // simulate at 60fps always
 
-    const GRAVITY = 0.4;
-    const SWIM = -7.5;
-    const CORAL_SPEED = 4.5;
-    const CORAL_GAP = 155;
+    const GRAVITY = 0.6;
+    const SWIM = -9;
+    const CORAL_SPEED = 7;
+    const CORAL_GAP = 140;
     const CORAL_WIDTH = 65;
-    const CORAL_SPAWN = 65;
+    const CORAL_SPAWN = 45;
     const FISH_SIZE = 22;
 
     function reset() {
@@ -608,7 +608,7 @@
     canvas.addEventListener('click', swim);
 
     // Start
-    gameLoop();
+    requestAnimationFrame(gameLoop);
   </script>
 </body>
 </html>
